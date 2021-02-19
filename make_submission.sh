@@ -25,7 +25,7 @@ fi
 
 if [ $(hostname) = 'isengard.mines.edu' ]
 then
-    zip -r $User-submission.zip ./
+    zip -r $USER-submission.zip ./
     echo -e "${GREEN}Zip file successfully created"
     echo -e "${GREEN}Submit $USER-submission to gradescope for the coresponding deliverable"
     echo -e "${NC}"

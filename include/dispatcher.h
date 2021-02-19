@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 
+
 /**
  * shell_command_dispatcher() - run a shell command
  *
@@ -16,5 +17,7 @@
  */
 int shell_command_dispatcher(const char *input, int last_rv,
 			     bool *shell_should_exit);
+
+
 
 #endif /* _DISPATCHER_H */

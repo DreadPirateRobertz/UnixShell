@@ -2,10 +2,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <errno.h>
 
 #include "dispatcher.h"
 #include "shell_builtins.h"
 #include "parser.h"
+//tododeleteme
 
 /**
  * dispatch_external_command() - run a pipeline of commands
@@ -16,43 +23,216 @@
  *              structure.  It is also recommended that you use the
  *              "parseview" demo program included in this project to
  *              observe the layout of this structure for a variety of
- *              inputs.
- *
- * Note: this function should not return until all commands in the
- * pipeline have completed their execution.
- *
- * Return: The return status of the last command executed in the
- * pipeline.
- */
+ * 
+           inputs.
+*/
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+static int uno_commando(struct command *pipeline){
+
+	bool outFlag = 0;
+	bool inFlag = 0;
+	int fdOut = STDOUT_FILENO;
+	int fdIn = STDIN_FILENO;
+  	
+	pid_t forkey;
+    int status = 0;
+	
+		//Let's check for file Redirection; wanted to do this as a switch but it wanted me to put down every
+		//output type
+		if(pipeline->output_type == COMMAND_OUTPUT_FILE_TRUNCATE){
+			outFlag = true; 
+			fdOut = open(pipeline->output_filename, O_CREAT | O_RDWR | O_TRUNC, S_IRUSR | S_IWUSR);
+			if(fdOut == -1) perror("");
+		}
+		if(pipeline->output_type == COMMAND_OUTPUT_FILE_APPEND){
+			outFlag = true; 
+			fdOut = open(pipeline->output_filename, O_CREAT | O_RDWR | O_APPEND, S_IRUSR | S_IWUSR);
+			if(fdOut == -1) perror("");
+		}
+		if(pipeline->input_filename != NULL){
+			inFlag = true; 
+			fdIn = open(pipeline->input_filename, O_RDONLY);
+			if(fdIn == -1) perror("");
+		}
+
+	forkey = fork();//forkey == pid
+	if(forkey<0) perror("");
+	else if(forkey == 0) { //Child Process
+		if(outFlag){
+			if(dup2(fdOut, STDOUT_FILENO) == -1){
+				perror("");
+				exit(errno);
+			}
+		}
+		if(inFlag)	{
+			if(dup2(fdIn, STDIN_FILENO) == -1){
+				perror("");
+				exit(errno);
+			}
+		}
+		if((execvp(pipeline->argv[0], pipeline->argv)) == -1) perror(""); //Prints out Appropriate error 	
+		exit(errno);
+	}
+	//Parent -> Close Files and wait 	
+	 if(outFlag){
+		 if(close(fdOut) == -1) perror("");
+	 }
+	  if(inFlag){
+		 if(close(fdIn) == -1) perror("");
+	 }
+	 if(wait(&status) != forkey) {//Wait for your CHILD!	
+		perror("");
+	 } 
+	 printf("Uno Commando Exit Status: %d\n", status);
+	 return status;
+}
+ 
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+static int terminal_command(struct command *pipeline, int fd[]){
+	
+	bool outFlag = 0;
+	bool inFlag = 0;
+	int fdOut = STDOUT_FILENO;
+	int fdIn = STDIN_FILENO;
+  	
+	pid_t forkey;
+    int status = 0;
+	
+		//Let's check for file Redirection; wanted to do this as a switch but it wanted me to put down every
+		//output type
+		if(pipeline->output_type == COMMAND_OUTPUT_FILE_TRUNCATE){
+			outFlag = true; 
+			fdOut = open(pipeline->output_filename, O_CREAT | O_RDWR | O_TRUNC, S_IRUSR | S_IWUSR);
+			if(fdOut == -1) perror("");
+		}
+		if(pipeline->output_type == COMMAND_OUTPUT_FILE_APPEND){
+			outFlag = true; 
+			fdOut = open(pipeline->output_filename, O_CREAT | O_RDWR | O_APPEND, S_IRUSR | S_IWUSR);
+			if(fdOut == -1) perror("");
+		}
+		if(pipeline->input_filename != NULL){
+			inFlag = true; 
+			fdIn = open(pipeline->input_filename, O_RDONLY);
+			if(fdIn == -1) perror("");
+		}
+
+	forkey = fork();//forkey == pid
+	if(forkey<0) perror("");
+
+	else if(forkey == 0) { //Child Process
+		if(outFlag){
+			if(dup2(fdOut, STDOUT_FILENO) == -1){
+				perror("");
+				exit(errno);
+			}
+		}
+		if(inFlag)	{
+			if(dup2(fdIn, STDIN_FILENO) == -1){
+				perror("");
+				exit(errno);
+			}
+		}
+		if(dup2(fd[0], STDIN_FILENO) == -1) perror("");
+		if((execvp(pipeline->argv[0], pipeline->argv)) == -1) perror("Test 2: Child Exec Fail -> Terminal Command"); //Error handling and executing the child	
+				exit(errno);
+	}
+	 //Parent -> 
+	 if(close(fd[0]) == -1) perror(""); //Closing read	
+	 if(wait(&status) != forkey) {//Wait for your CHILD!	
+		perror("");
+	 } 
+	 perror(pipeline->argv[0]);	
+	 printf("Terminal Command Exit Status: %d\n", status);
+	 return status;	
+}
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+static int down_the_pipe(struct command *pipeline){
+	pid_t forkey; 
+    int status = 0;
+	int fd[2]; //File Descriptor Array fd[0] = read fd[1] = write
+	int fdIn = STDIN_FILENO;
+	bool inFlag = 0;
+		
+	if(pipe(fd) == -1) perror("");//Pipe is open and takes care of errors
+
+	if(pipeline->input_filename != NULL){
+		inFlag = true; 
+		fdIn = open(pipeline->input_filename, O_RDONLY);
+		if(fdIn == -1) perror("");
+		}
+
+	forkey = fork(); //forkey == pid
+	if(forkey<0) perror("");
+
+		else if(forkey == 0) { //Child Process
+			if(close(fd[0])==-1) perror(""); //Closing Read
+			if(dup2(fd[1], STDOUT_FILENO)==-1) perror("");//dup2(source, destination) //Writing to the pipe
+			if(inFlag)	{
+				if(dup2(fdIn, STDIN_FILENO) == -1){
+					perror("");
+					exit(errno);
+			}
+		}
+			if((execvp(pipeline->argv[0], pipeline->argv)) == -1)  perror("Test 1: Child Exec Fail -> Down The Pipe"); //Performing child process thru execvp
+				 exit(errno);
+			}
+		//Parent Below ->
+		if(inFlag){
+		if(close(fdIn) == -1) perror("");
+		}
+		if(close(fd[1]) == -1) perror(""); //Closing write  
+	 		if(wait(&status) != forkey) perror(""); //Wait for your CHILD!
+			pipeline = pipeline->pipe_to;  //Makes it easier
+
+	 	if(pipeline->output_type == COMMAND_OUTPUT_PIPE){ //Are there more pipeS??? :)
+			if((forkey = fork())==-1) {//Fork Numero Dos
+				perror(""); 
+				// return errno;
+			}
+			else if (forkey == 0){ //CHILD
+			if(dup2(fd[0], STDIN_FILENO) == -1) perror(""); // -> Pass the output down the pipe
+				status = down_the_pipe(pipeline); //Recurse
+				exit(0);
+			}
+			 else{
+			 if(wait(&status) != forkey) {
+				 perror("");
+			 }
+		 }}
+		 if(pipeline->output_type != COMMAND_OUTPUT_PIPE){
+			  status = terminal_command(pipeline, fd);
+			  }
+		 
+		 printf("Down The Pipe Exit Status: %d\n", status);
+		 
+		 return status;	
+}
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 static int dispatch_external_command(struct command *pipeline)
 {
-	/*
-	 * Note: this is where you'll start implementing the project.
-	 *
-	 * It's the only function with a "TODO".  However, if you try
-	 * and squeeze your entire external command logic into a
-	 * single routine with no helper functions, you'll quickly
-	 * find your code becomes sloppy and unmaintainable.
-	 *
-	 * It's up to *you* to structure your software cleanly.  Write
-	 * plenty of helper functions, and even start making yourself
-	 * new files if you need.
-	 *
-	 * For D1: you only need to support running a single command
-	 * (not a chain of commands in a pipeline), with no input or
-	 * output files (output to stdout only).  In other words, you
-	 * may live with the assumption that the "input_file" field in
-	 * the pipeline struct you are given is NULL, and that
-	 * "output_type" will always be COMMAND_OUTPUT_STDOUT.
-	 *
-	 * For D2: you'll extend this function to support input and
-	 * output files, as well as pipeline functionality.
-	 *
-	 * Good luck!
-	 */
-	fprintf(stderr, "TODO: handle external commands\n");
-	return -1;
+	
+    int status = 0;
+
+	 if(pipeline->output_type == COMMAND_OUTPUT_PIPE){ //Is there a pipe? Let's go, Mario!
+		status = down_the_pipe(pipeline);  
+	 }
+	 else{		
+		status = uno_commando(pipeline);
+	 }
+	 return status;		
 }
+
 
 /**
  * dispatch_parsed_command() - run a command after it has been parsed
