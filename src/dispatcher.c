@@ -85,7 +85,7 @@ static int uno_commando(struct command *pipeline){
 	 if(wait(&status) != forkey) {//Wait for your CHILD!	
 		perror("");
 	 } 
-	 printf("Uno Commando Exit Status: %d\n", status);
+	 printf("Uno Commando Exit Status: %d\n", WEXITSTATUS(status));
 	 return status;
 }
  
@@ -137,16 +137,19 @@ static int terminal_command(struct command *pipeline, int fd[]){
 			}
 		}
 		if(dup2(fd[0], STDIN_FILENO) == -1) perror("");
-		if((execvp(pipeline->argv[0], pipeline->argv)) == -1) perror("Test 2: Child Exec Fail -> Terminal Command"); //Error handling and executing the child	
+		if((execvp(pipeline->argv[0], pipeline->argv)) == -1) {
+				perror("Test 2: Child Exec Fail -> Terminal Command"); //Error handling and executing the child	
 				exit(errno);
+		}
 	}
 	 //Parent -> 
 	 if(close(fd[0]) == -1) perror(""); //Closing read	
 	 if(wait(&status) != forkey) {//Wait for your CHILD!	
 		perror("");
 	 } 
-	 perror(pipeline->argv[0]);	
-	 printf("Terminal Command Exit Status: %d\n", status);
+	 
+	 printf("Terminal Command Exit Status: %d\n", WEXITSTATUS(status));
+	 
 	 return status;	
 }
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -156,6 +159,7 @@ static int terminal_command(struct command *pipeline, int fd[]){
 static int down_the_pipe(struct command *pipeline){
 	pid_t forkey; 
     int status = 0;
+	int status_term = 0;
 	int fd[2]; //File Descriptor Array fd[0] = read fd[1] = write
 	int fdIn = STDIN_FILENO;
 	bool inFlag = 0;
@@ -180,39 +184,43 @@ static int down_the_pipe(struct command *pipeline){
 					exit(errno);
 			}
 		}
-			if((execvp(pipeline->argv[0], pipeline->argv)) == -1)  perror("Test 1: Child Exec Fail -> Down The Pipe"); //Performing child process thru execvp
+			if((execvp(pipeline->argv[0], pipeline->argv)) == -1) {
+				 perror("Test 1: Child Exec Fail -> Down The Pipe"); //Performing child process thru execvp
 				 exit(errno);
+			}
 			}
 		//Parent Below ->
 		if(inFlag){
-		if(close(fdIn) == -1) perror("");
+			if(close(fdIn) == -1) perror("");
 		}
+
 		if(close(fd[1]) == -1) perror(""); //Closing write  
-	 		if(wait(&status) != forkey) perror(""); //Wait for your CHILD!
-			pipeline = pipeline->pipe_to;  //Makes it easier
+	 	if(wait(&status) != forkey) perror(""); //Wait for your CHILD!
+		pipeline = pipeline->pipe_to;  //Makes it easier
 
 	 	if(pipeline->output_type == COMMAND_OUTPUT_PIPE){ //Are there more pipeS??? :)
 			if((forkey = fork())==-1) {//Fork Numero Dos
 				perror(""); 
-				// return errno;
 			}
 			else if (forkey == 0){ //CHILD
 			if(dup2(fd[0], STDIN_FILENO) == -1) perror(""); // -> Pass the output down the pipe
-				status = down_the_pipe(pipeline); //Recurse
-				exit(0);
+					
+			down_the_pipe(pipeline); //Recurse
+			exit(errno);
 			}
-			 else{
-			 if(wait(&status) != forkey) {
-				 perror("");
-			 }
-		 }}
+			else if (forkey > 0){	 
+				while (wait(NULL) != -1 || errno != ECHILD) {  //Code Snippet from StackOverflow
+					//Chill out and wait for your ALL damn children
+				}	  
+		 }
+		 }
 		 if(pipeline->output_type != COMMAND_OUTPUT_PIPE){
-			  status = terminal_command(pipeline, fd);
+			  status_term = terminal_command(pipeline, fd);  //TODO: GET PROGRAM TO RETURN THIS GODDAMN STATUS -> RIGHT NOW RETURNING :) with three+ bad commands I wonder if another waiting issue
 			  }
 		 
-		 printf("Down The Pipe Exit Status: %d\n", status);
+		 printf("Down The Pipe Exit Status: %d\n", WEXITSTATUS(status));
 		 
-		 return status;	
+		 return status_term; 	
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -222,15 +230,17 @@ static int down_the_pipe(struct command *pipeline){
 static int dispatch_external_command(struct command *pipeline)
 {
 	
-    int status = 0;
+    int status_term = 2;
+	int status = 0;
 
 	 if(pipeline->output_type == COMMAND_OUTPUT_PIPE){ //Is there a pipe? Let's go, Mario!
-		status = down_the_pipe(pipeline);  
+		status_term = down_the_pipe(pipeline); 
 	 }
 	 else{		
 		status = uno_commando(pipeline);
+		return status;
 	 }
-	 return status;		
+	 return status_term;		
 }
 
 
