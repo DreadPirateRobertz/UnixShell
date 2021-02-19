@@ -158,8 +158,7 @@ static int terminal_command(struct command *pipeline, int fd[]){
 
 static int down_the_pipe(struct command *pipeline){
 	pid_t forkey; 
-    int status = 0;
-	int status_term = 0;
+    int status = 0;;
 	int fd[2]; //File Descriptor Array fd[0] = read fd[1] = write
 	int fdIn = STDIN_FILENO;
 	bool inFlag = 0;
@@ -206,21 +205,22 @@ static int down_the_pipe(struct command *pipeline){
 			if(dup2(fd[0], STDIN_FILENO) == -1) perror(""); // -> Pass the output down the pipe
 					
 			down_the_pipe(pipeline); //Recurse
-			exit(errno);
+			exit(0);
 			}
 			else if (forkey > 0){	 
 				while (wait(NULL) != -1 || errno != ECHILD) {  //Code Snippet from StackOverflow
 					//Chill out and wait for your ALL damn children
 				}	  
-		 }
-		 }
-		 if(pipeline->output_type != COMMAND_OUTPUT_PIPE){
-			  status_term = terminal_command(pipeline, fd);  //TODO: GET PROGRAM TO RETURN THIS GODDAMN STATUS -> RIGHT NOW RETURNING :) with three+ bad commands I wonder if another waiting issue
+		 }}
+		  printf("Down The Pipe Exit Status: %d\n", WEXITSTATUS(status));
+		//Tried the wait statement right here -> somehow the down the pipe status is superceding terminal status ~> SHIT :)
+		 if(pipeline->output_type != COMMAND_OUTPUT_PIPE){ //Seems not to matter if I set either of these 2 functions equal to status
+			  terminal_command(pipeline, fd);  //TODO: GET PROGRAM TO RETURN THIS GODDAMN STATUS -> RIGHT NOW RETURNING :) with three+ bad commands I wonder if another waiting issue
+				
 			  }
 		 
-		 printf("Down The Pipe Exit Status: %d\n", WEXITSTATUS(status));
-		 
-		 return status_term; 	
+		 return status;	//Tried different variables to return terminal directly, tried terminal_command to return at bottom of dispatch_external
+		 				//Tried calling terminal command afterd down the pipe in external command and passing fd -> none worked for some reason
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -229,18 +229,17 @@ static int down_the_pipe(struct command *pipeline){
 
 static int dispatch_external_command(struct command *pipeline)
 {
-	
-    int status_term = 2;
+
 	int status = 0;
 
 	 if(pipeline->output_type == COMMAND_OUTPUT_PIPE){ //Is there a pipe? Let's go, Mario!
-		status_term = down_the_pipe(pipeline); 
+		status= down_the_pipe(pipeline); 
 	 }
 	 else{		
 		status = uno_commando(pipeline);
-		return status;
+
 	 }
-	 return status_term;		
+	 return status;	
 }
 
 
