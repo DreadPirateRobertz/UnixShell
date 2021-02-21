@@ -85,23 +85,21 @@ static int uno_commando(struct command *pipeline){
 	 if(wait(&status) != forkey) {//Wait for your CHILD!	
 		perror("");
 	 } 
-	 printf("Uno Commando Exit Status: %d\n", WEXITSTATUS(status));
+	// printf("Uno Commando Exit Status: %d\n", WEXITSTATUS(status));
 	 return status;
 }
  
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-static int terminal_command(struct command *pipeline, int fd[]){
+static int terminal_command(struct command *pipeline, int fd[], int pipeRet[]){
 	
 	bool outFlag = 0;
 	bool inFlag = 0;
 	int fdOut = STDOUT_FILENO;
 	int fdIn = STDIN_FILENO;
-  	
+  int status = 0;	
 	pid_t forkey;
-    int status = 0;
-	
 		//Let's check for file Redirection; wanted to do this as a switch but it wanted me to put down every
 		//output type
 		if(pipeline->output_type == COMMAND_OUTPUT_FILE_TRUNCATE){
@@ -138,7 +136,7 @@ static int terminal_command(struct command *pipeline, int fd[]){
 		}
 		if(dup2(fd[0], STDIN_FILENO) == -1) perror("");
 		if((execvp(pipeline->argv[0], pipeline->argv)) == -1) {
-				perror("Test 2: Child Exec Fail -> Terminal Command"); //Error handling and executing the child	
+				perror(""); //Error handling and executing the child	
 				exit(errno);
 		}
 	}
@@ -148,17 +146,18 @@ static int terminal_command(struct command *pipeline, int fd[]){
 		perror("");
 	 } 
 	 
-	 printf("Terminal Command Exit Status: %d\n", WEXITSTATUS(status));
-	 
-	 return status;	
+       //printf("Terminal Command Exit Status: %d\n", WEXITSTATUS(status));
+	 write(pipeRet[1], &status, sizeof(int));
+	return status;		
 }
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-static int down_the_pipe(struct command *pipeline){
+static int down_the_pipe(struct command *pipeline, int pipeRet[]){
 	pid_t forkey; 
-    int status = 0;;
+	    int status = 0;
+	    int dontcare = 0;
 	int fd[2]; //File Descriptor Array fd[0] = read fd[1] = write
 	int fdIn = STDIN_FILENO;
 	bool inFlag = 0;
@@ -170,63 +169,55 @@ static int down_the_pipe(struct command *pipeline){
 		fdIn = open(pipeline->input_filename, O_RDONLY);
 		if(fdIn == -1) perror("");
 		}
-
+	
 	forkey = fork(); //forkey == pid
 	if(forkey<0) perror("");
 
-		else if(forkey == 0) { //Child Process
-			if(close(fd[0])==-1) perror(""); //Closing Read
-			if(dup2(fd[1], STDOUT_FILENO)==-1) perror("");//dup2(source, destination) //Writing to the pipe
-			if(inFlag)	{
-				if(dup2(fdIn, STDIN_FILENO) == -1){
-					perror("");
-					exit(errno);
-			}
+	else if(forkey == 0) { //Child Process
+		if(close(fd[0])==-1) perror(""); //Closing Read
+		if(dup2(fd[1], STDOUT_FILENO)==-1) perror("");//dup2(source, destination) //Writing to the pipe
+		if(inFlag)	{
+			if(dup2(fdIn, STDIN_FILENO) == -1){
+				perror("");
+				exit(errno);
 		}
-			if((execvp(pipeline->argv[0], pipeline->argv)) == -1) {
-				 perror("Test 1: Child Exec Fail -> Down The Pipe"); //Performing child process thru execvp
-				 exit(errno);
-			}
-			}
-		//Parent Below ->
-		if(inFlag){
-			if(close(fdIn) == -1) perror("");
+	}
+		if((execvp(pipeline->argv[0], pipeline->argv)) == -1) {
+			 perror(""); //Performing child process thru execvp
+			 exit(errno);
 		}
-
-		if(close(fd[1]) == -1) perror(""); //Closing write  
-	 	if(wait(&status) != forkey) perror(""); //Wait for your CHILD!
-		
-		if(pipeline->output_type == COMMAND_OUTPUT_PIPE){
-			pipeline = pipeline->pipe_to;  //Makes it easier
 		}
+	//Parent Below ->
+	if(inFlag){
+		if(close(fdIn) == -1) perror("");
+	}
 
-	    if(pipeline->output_type != COMMAND_OUTPUT_PIPE){
-			  terminal_command(pipeline, fd);  
-			  }
+	if(close(fd[1]) == -1) perror(""); //Closing write  
+	if(wait(&dontcare) != forkey) perror(""); //Wait for your CHILD!
+	 //waitpid(forkey, &status, 0);
 
-	 	else if(pipeline->output_type == COMMAND_OUTPUT_PIPE){ //Are there more pipeS??? :)
-			if((forkey = fork())==-1) {//Fork Numero Dos
-				perror(""); 
-			}
-			else if (forkey == 0){ //CHILD
-			if(dup2(fd[0], STDIN_FILENO) == -1) perror(""); // -> Pass the output down the pipe
-					
-			down_the_pipe(pipeline); //Recurse
-			exit(0);
-			}
-			else if (forkey > 0){	 
-				while (wait(NULL) != -1 || errno != ECHILD) {  //Code Snippet from StackOverflow
-					//Chill out and wait for your ALL damn children
-				}	  
-		 }}
-		  printf("Down The Pipe Exit Status: %d\n", WEXITSTATUS(status));
-		//Tried the wait statement right here -> somehow the down the pipe status is superceding terminal status ~> SHIT :)
-		 if(pipeline->output_type != COMMAND_OUTPUT_PIPE){
-			  terminal_command(pipeline, fd);  
-				
-			  }
-		 
-		 return status;	//Tried different variables to return terminal directly, tried terminal_command to return at bottom of dispatch_external
+	 if(pipeline->output_type == COMMAND_OUTPUT_PIPE ){
+		  pipeline = pipeline->pipe_to; 
+	 }
+	 
+	if(pipeline->output_type != COMMAND_OUTPUT_PIPE ){
+		  status = terminal_command(pipeline, fd, pipeRet);  //base Case
+	  }
+	else {
+		forkey = fork();
+		if (forkey == 0){
+			dup2(fd[0],STDIN_FILENO);
+			status = down_the_pipe(pipeline, pipeRet); //Recurse	 
+//	printf("Down The Pipe Exit Status: %s %d\n",pipeline->argv[0], WEXITSTATUS(status));
+			exit(status);
+		}
+		else {
+			wait(&status);
+			close(fd[0]);
+		}
+	}
+
+	return status;	//Tried different variables to return terminal directly, tried terminal_command to return at bottom of dispatch_external
 		 				//Tried calling terminal command afterd down the pipe in external command and passing fd -> none worked for some reason
 }
 
@@ -238,14 +229,18 @@ static int dispatch_external_command(struct command *pipeline)
 {
 
 	int status = 0;
-
 	 if(pipeline->output_type == COMMAND_OUTPUT_PIPE){ //Is there a pipe? Let's go, Mario!
-		status= down_the_pipe(pipeline); 
+		int pipeRet[2];
+		pipe(pipeRet);
+		down_the_pipe(pipeline, pipeRet); 
+		read(pipeRet[0], &status, sizeof(int));
+	//	printf("Close pipeRet %d\n", *pipeRet);
 	 }
 	 else{		
 		status = uno_commando(pipeline);
 
 	 }
+	
 	 return status;	
 }
 
@@ -299,3 +294,4 @@ int shell_command_dispatcher(const char *input, int last_rv,
 	free_parse_result(parse_result);
 	return rv;
 }
+
