@@ -195,9 +195,16 @@ static int down_the_pipe(struct command *pipeline){
 
 		if(close(fd[1]) == -1) perror(""); //Closing write  
 	 	if(wait(&status) != forkey) perror(""); //Wait for your CHILD!
-		pipeline = pipeline->pipe_to;  //Makes it easier
+		
+		if(pipeline->output_type == COMMAND_OUTPUT_PIPE){
+			pipeline = pipeline->pipe_to;  //Makes it easier
+		}
 
-	 	if(pipeline->output_type == COMMAND_OUTPUT_PIPE){ //Are there more pipeS??? :)
+	    if(pipeline->output_type != COMMAND_OUTPUT_PIPE){
+			  terminal_command(pipeline, fd);  
+			  }
+
+	 	else if(pipeline->output_type == COMMAND_OUTPUT_PIPE){ //Are there more pipeS??? :)
 			if((forkey = fork())==-1) {//Fork Numero Dos
 				perror(""); 
 			}
@@ -214,8 +221,8 @@ static int down_the_pipe(struct command *pipeline){
 		 }}
 		  printf("Down The Pipe Exit Status: %d\n", WEXITSTATUS(status));
 		//Tried the wait statement right here -> somehow the down the pipe status is superceding terminal status ~> SHIT :)
-		 if(pipeline->output_type != COMMAND_OUTPUT_PIPE){ //Seems not to matter if I set either of these 2 functions equal to status
-			  terminal_command(pipeline, fd);  //TODO: GET PROGRAM TO RETURN THIS GODDAMN STATUS -> RIGHT NOW RETURNING :) with three+ bad commands I wonder if another waiting issue
+		 if(pipeline->output_type != COMMAND_OUTPUT_PIPE){
+			  terminal_command(pipeline, fd);  
 				
 			  }
 		 
