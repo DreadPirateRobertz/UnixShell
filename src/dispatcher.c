@@ -8,11 +8,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
-
 #include "dispatcher.h"
 #include "shell_builtins.h"
 #include "parser.h"
-//tododeleteme
 
 /**
  * dispatch_external_command() - run a pipeline of commands
@@ -98,7 +96,7 @@ static int terminal_command(struct command *pipeline, int fd[], int pipeRet[]){
 	bool inFlag = 0;
 	int fdOut = STDOUT_FILENO;
 	int fdIn = STDIN_FILENO;
-  int status = 0;	
+    int status = 0;	
 	pid_t forkey;
 		//Let's check for file Redirection; wanted to do this as a switch but it wanted me to put down every
 		//output type
@@ -147,7 +145,7 @@ static int terminal_command(struct command *pipeline, int fd[], int pipeRet[]){
 	 } 
 	 
        //printf("Terminal Command Exit Status: %d\n", WEXITSTATUS(status));
-	 write(pipeRet[1], &status, sizeof(int));
+	 write(pipeRet[1], &status, sizeof(int));//Writng final status to a pipe and sending it to display_external_command
 	return status;		
 }
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -156,8 +154,8 @@ static int terminal_command(struct command *pipeline, int fd[], int pipeRet[]){
 
 static int down_the_pipe(struct command *pipeline, int pipeRet[]){
 	pid_t forkey; 
-	    int status = 0;
-	    int dontcare = 0;
+	int status = 0;
+	int dontcare = 0;
 	int fd[2]; //File Descriptor Array fd[0] = read fd[1] = write
 	int fdIn = STDIN_FILENO;
 	bool inFlag = 0;
